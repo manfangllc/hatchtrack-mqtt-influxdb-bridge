@@ -6,8 +6,9 @@ CFLAGS_DEFAULT := -ggdb3 -O0 -Wall -Wshadow
 CFLAGS_APP := $(CFLAGS_DEFAULT)
 CFLAGS_AWS = $(CFLAGS_DEFAULT)
 CFLAGS_AWS += -I $(BUILD_AWS_SDK_INC_DIR) -I $(APP_INC_DIR) -I ./build/include/
+CFLAGS_CURL = -I ./build/include/curl
 LDFLAGS_APP = -L $(BUILD_APP_DEP_LIB_DIR)
-LDFLAGS_APP += -lmbedtls -lmbedcrypto -lmbedx509 -lawssdk
+LDFLAGS_APP += -lmbedtls -lmbedcrypto -lmbedx509 -lawssdk -lpthread -lcurl -lz
 
 BUILD_APP_BIN := hatchtrack-mqtt-influxdb-bridge
 BUILD_APP_OBJ_DIR := ./obj
@@ -31,6 +32,7 @@ APP_LIBS += $(BUILD_APP_DEP_LIB_DIR)/libmbedtls.a
 APP_LIBS += $(BUILD_APP_DEP_LIB_DIR)/libmbedx509.a
 APP_LIBS += $(BUILD_APP_DEP_LIB_DIR)/libmbedx509.a
 APP_LIBS += $(BUILD_APP_DEP_LIB_DIR)/libcjson.a
+APP_LIBS += $(BUILD_APP_DEP_LIB_DIR)/libcurl.a
 
 AWS_DIR = $(DIR)/lib/aws-iot-device-sdk-embedded-C
 AWS_SRC_DIR := $(AWS_DIR)/src
@@ -63,7 +65,7 @@ AWS_COMMON_INC_CP := $(addprefix $(BUILD_AWS_SDK_INC_DIR)/, $(notdir $(AWS_COMMO
 
 .PHONY: all mbedtls-patch
 
-all: mbedtls cjson aws-sdk app
+all: mbedtls curl cjson aws-sdk app
 
 app: app-bin-dir $(APP_OBJ) $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN)
 	@echo "built $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN)" 
@@ -83,10 +85,10 @@ aws-sdk-inc: aws-sdk-inc-dir $(AWS_INC_CP) $(AWS_JSMN_INC_CP) $(AWS_MBEDTLS_INC_
 aws-sdk-inc-dir:
 	@mkdir -v -p $(BUILD_AWS_SDK_INC_DIR)
 
-libcurl: mbedtls
-	$(shell cd ./lib/curl; ./buildconf)
-	#$(shell ./lib/curl/configure --without-ssl --with-mbedtls=/home/anon/hatchtrack-mqtt-influxdb-bridge/build --disable-shared)
-	#$(MAKE) -C 
+curl: mbedtls
+	$(SHELL) -c '$(DIR)/scripts/configure-curl.sh'
+	$(MAKE) -C $(DIR)/lib/curl*
+	$(MAKE) install -C $(DIR)/lib/curl*
 
 mbedtls: mbedtls-patch
 	$(MAKE) install DESTDIR=$(DIR)/build -C $(DIR)/lib/mbedtls
@@ -100,19 +102,23 @@ cjson:
 	cp $(DIR)/lib/cJSON/cJSON.h ./build/include/
 
 clean:
+	$(MAKE) -C ./lib/cJSON clean
+	$(MAKE) -C ./lib/curl* uninstall
+	$(MAKE) -C ./lib/curl* clean
+	$(MAKE) -C ./lib/mbedtls uninstall
+	$(MAKE) -C ./lib/mbedtls clean
+	$(SHELL) -c 'cd ./lib/mbedtls; git reset --hard HEAD'
 	@rm -rfv ./build/bin
 	@rm -rfv ./build/lib
 	@rm -rfv ./build/include/
 	@rm -rfv ./obj/*.o
-	$(MAKE) -C ./lib/cJSON clean
 	# undo patch
-	$(SHELL) -c 'cd ./lib/mbedtls; git reset --hard HEAD'
 
 $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN): $(APP_OBJ)
 	$(CC) -o $@ $^ $(APP_LIBS) $(CFLAGS_APP) $(LDFLAGS_APP)
 
 $(BUILD_APP_OBJ_DIR)/%.o : $(APP_SRC_DIR)/%.c
-	$(CC) $(CFLAGS_AWS) -c $< -o $@
+	$(CC) $(CFLAGS_AWS) $(CFLAGS_CURL) -c $< -o $@
 
 $(BUILD_AWS_SDK_OBJ_DIR)/%.o : $(AWS_SRC_DIR)/%.c
 	$(CC) $(CFLAGS_AWS) -c $< -o $@

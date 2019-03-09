@@ -18,6 +18,8 @@
 
 #include "cJSON.h"
 
+#include "curl.h"
+
 /***** Defines *****/
 
 #define AWS_TOPIC_NAME "hatchtrack/data/put"
@@ -28,6 +30,7 @@ static volatile bool _is_running = true;
 static AWS_IoT_Client client;
 
 pthread_mutex_t _lock = PTHREAD_MUTEX_INITIALIZER;
+static char _buf[2048];
 
 /***** Local Functions *****/
 
@@ -35,6 +38,37 @@ void
 sigint_callback(int dummy)
 {
   _is_running = false;
+}
+
+static bool
+_parse_json_and_format(char * js)
+{
+  char * peep_uuid = NULL;
+  char * hatch_uuid = NULL;
+  char * temperature = NULL;
+  char * humidity = NULL;
+  bool r = true;
+  cJSON * node = NULL;
+  cJSON * cjson = NULL;
+
+  cjson = cJSON_Parse(js);
+  if (NULL == cjson) {
+    printf("failed to parse JSON message!\n");
+    r = false;
+  }
+
+  if (r) {
+    node = cJSON_GetObjectItemCaseSensitive(cjson, "peepUUID");
+    if (cJSON_IsString(node) && (node->valuestring != NULL)) {
+      printf("peep_uuid = \"%s\"\n", node->valuestring);
+    }
+
+    if (NULL == peep_uuid) {
+      r = false;
+    }
+  }
+
+  return r;
 }
 
 void
@@ -51,6 +85,8 @@ subscribe_callback(AWS_IoT_Client * p_client, char *topic_name,
   // TODO: Check to ensure it is valid JSON?
   printf("Subscribe callback\n");
   printf("%.*s\n", (int) params->payloadLen, (char *) params->payload);
+
+  _parse_json_and_format((char *) params->payload);
 
   pthread_mutex_unlock(&_lock);
 }
@@ -172,6 +208,38 @@ _aws_listen(char * topic)
   }
 
   return r;
+}
+
+bool
+_https_post(char * msg)
+{
+  CURL *curl;
+  CURLcode res;
+ 
+  curl_global_init(CURL_GLOBAL_DEFAULT);
+ 
+  curl = curl_easy_init();
+  if(curl) {
+    curl_easy_setopt(curl, CURLOPT_URL, "https://db.hatchtrack.com:8086/write?db=peep0");
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    curl_easy_setopt(curl, CURLOPT_USERPWD, "writer:YGAPARxJ0DOPm2mC");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "peep,peep_uuid=hello!!!-d78a-471f-81d4-world!!!!!!!,hatch_uuid=9b2a2609-4865-4415-bf3e-ebe885646822 temperature=40.4,humidity=55");
+    /* Perform the request, res will get the return code */ 
+    res = curl_easy_perform(curl);
+    /* Check for errors */ 
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
+ 
+    /* always cleanup */ 
+    curl_easy_cleanup(curl);
+  }
+ 
+  curl_global_cleanup();
+ 
+  return 0;
 }
 
 /***** Global Functions *****/
