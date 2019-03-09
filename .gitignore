@@ -1,6 +1,9 @@
 *.o
 *.lo
 
+lib/curl-7.64.0/Makefile
+lib/curl-7.64.0/docs/curl.1
+lib/curl-7.64.0/src/tool_hugehelp.c
 lib/curl-7.64.0/config.log
 lib/curl-7.64.0/config.status
 lib/curl-7.64.0/curl-config
