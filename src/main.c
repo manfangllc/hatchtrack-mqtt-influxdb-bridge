@@ -45,23 +45,12 @@ subscribe_callback(AWS_IoT_Client * p_client, char *topic_name,
   (void) p_client;
   (void) p_data;
 
-  FILE * fp = NULL;
-  static char buf[1024];
-  char * temperature_file = NULL;
-  char * humidity_file = NULL;
-  double temperature = 0.0;
-  double humidity = 0.0;
-  bool r = true;
-
   pthread_mutex_lock(&_lock);
 
   // NOTE: Assumes payload is properly formatted JSON message
   // TODO: Check to ensure it is valid JSON?
-  strncpy(buf, params->payload, params->payloadLen);
-  buf[params->payloadLen] = '\0';
-
   printf("Subscribe callback\n");
-  printf("%s\n", buf);
+  printf("%.*s\n", (int) params->payloadLen, (char *) params->payload);
 
   pthread_mutex_unlock(&_lock);
 }

@@ -1,0 +1,18 @@
+diff --git a/Makefile b/Makefile
+index c18b99b2..4b49dca2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,8 +1,10 @@
+ 
+-DESTDIR=/usr/local
++# OVERRIDE
++#DESTDIR=/usr/local
+ PREFIX=mbedtls_
+ 
+-.SILENT:
++# OVERRIDE
++#.SILENT:
+ 
+ .PHONY: all no_test programs lib tests install uninstall clean test check covtest lcov apidoc apidoc_clean
+ 
+
