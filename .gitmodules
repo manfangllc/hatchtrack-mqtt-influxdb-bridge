@@ -1,0 +1,9 @@
+[submodule "lib/aws-iot-device-sdk-embedded-C"]
+	path = lib/aws-iot-device-sdk-embedded-C
+	url = https://github.com/aws/aws-iot-device-sdk-embedded-C.git
+[submodule "lib/mbedtls"]
+	path = lib/mbedtls
+	url = https://github.com/ARMmbed/mbedtls.git
+[submodule "lib/cJSON"]
+	path = lib/cJSON
+	url = https://github.com/DaveGamble/cJSON.git
