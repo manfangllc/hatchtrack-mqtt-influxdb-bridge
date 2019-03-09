@@ -83,6 +83,11 @@ aws-sdk-inc: aws-sdk-inc-dir $(AWS_INC_CP) $(AWS_JSMN_INC_CP) $(AWS_MBEDTLS_INC_
 aws-sdk-inc-dir:
 	@mkdir -v -p $(BUILD_AWS_SDK_INC_DIR)
 
+libcurl: mbedtls
+	$(shell cd ./lib/curl; ./buildconf)
+	#$(shell ./lib/curl/configure --without-ssl --with-mbedtls=/home/anon/hatchtrack-mqtt-influxdb-bridge/build --disable-shared)
+	#$(MAKE) -C 
+
 mbedtls: mbedtls-patch
 	$(MAKE) install DESTDIR=$(DIR)/build -C $(DIR)/lib/mbedtls
 
