@@ -23,7 +23,7 @@
 
 // Get from console
 // =================================================
-#define AWS_IOT_MQTT_HOST              "a1mdhmgt02ub52.iot.us-west-2.amazonaws.com" ///< Customer specific MQTT HOST. The same will be used for Thing Shadow
+#define AWS_IOT_MQTT_HOST              "a1mdhmgt02ub52-ats.iot.us-west-2.amazonaws.com" ///< Customer specific MQTT HOST. The same will be used for Thing Shadow
 #define AWS_IOT_MQTT_PORT              8883 ///< default port for MQTT/S
 #define AWS_IOT_MQTT_CLIENT_ID         "hatchtrack-mqtt-influxdb-bridge" ///< MQTT client ID should be unique for every device
 #define AWS_IOT_MY_THING_NAME          "AWS-IoT-C-SDK" ///< Thing Name of the Shadow this device is associated with
