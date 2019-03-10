@@ -24,13 +24,16 @@
 
 #define AWS_TOPIC_NAME "hatchtrack/data/put"
 
+#define INFLUXDB_URL ("https://db.hatchtrack.com:8086/write?db=peep0")
+#define INFLUXDB_USER_PASS ("writer:YGAPARxJ0DOPm2mC")
+#define INFLUXDB_DATA_STR_MAX_LEN (512)
+
 /***** Local Data *****/
 
 static volatile bool _is_running = true;
 static AWS_IoT_Client client;
 
 pthread_mutex_t _lock = PTHREAD_MUTEX_INITIALIZER;
-static char _buf[2048];
 
 /***** Local Functions *****/
 
@@ -41,15 +44,54 @@ sigint_callback(int dummy)
 }
 
 static bool
+_https_post_to_db(char * msg)
+{
+  CURL *curl = NULL;
+  CURLcode res = CURLE_OK;
+  bool r = true;
+
+  curl = curl_easy_init();
+  if (NULL == curl) {
+    r = false;
+  }
+
+  if (r) {
+    curl_easy_setopt(curl, CURLOPT_URL, INFLUXDB_URL);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    curl_easy_setopt(curl, CURLOPT_USERPWD, INFLUXDB_USER_PASS);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, msg);
+
+    // perform the request, res will get the return code 
+    res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+      r = false;
+      fprintf(
+        stderr,
+        "curl_easy_perform() failed: %s\n",
+        curl_easy_strerror(res));
+    }
+  }
+
+  if (curl) {
+    curl_easy_cleanup(curl);
+  }
+
+  return r;
+}
+
+static char *
 _parse_json_and_format(char * js)
 {
-  char * peep_uuid = NULL;
-  char * hatch_uuid = NULL;
-  char * temperature = NULL;
-  char * humidity = NULL;
-  bool r = true;
   cJSON * node = NULL;
   cJSON * cjson = NULL;
+  char * out = NULL;
+  char * peep_uuid = NULL;
+  char * hatch_uuid = NULL;
+  float temperature = 0.0;
+  float humidity = 0.0;
+  bool r = true;
 
   cjson = cJSON_Parse(js);
   if (NULL == cjson) {
@@ -60,35 +102,75 @@ _parse_json_and_format(char * js)
   if (r) {
     node = cJSON_GetObjectItemCaseSensitive(cjson, "peepUUID");
     if (cJSON_IsString(node) && (node->valuestring != NULL)) {
-      printf("peep_uuid = \"%s\"\n", node->valuestring);
+      peep_uuid = node->valuestring;
     }
-
-    if (NULL == peep_uuid) {
+    else {
       r = false;
     }
   }
 
-  return r;
+  if (r) {
+    node = cJSON_GetObjectItemCaseSensitive(cjson, "hatchUUID");
+    if (cJSON_IsString(node) && (node->valuestring != NULL)) {
+      hatch_uuid = node->valuestring;
+    }
+    else {
+      r = false;
+    }
+  }
+
+  if (r) {
+    node = cJSON_GetObjectItemCaseSensitive(cjson, "temperature");
+    if (cJSON_IsNumber(node)) {
+      temperature = node->valuedouble;
+    }
+    else {
+      r = false;
+    }
+  }
+
+  if (r) {
+    node = cJSON_GetObjectItemCaseSensitive(cjson, "humidity");
+    if (cJSON_IsNumber(node)) {
+      humidity = node->valuedouble;
+    }
+    else {
+      r = false;
+    }
+  }
+
+  if (r) {
+    out = malloc(INFLUXDB_DATA_STR_MAX_LEN);
+    sprintf(
+      out,
+      "peep,"
+      "peep_uuid=%s,"
+      "hatch_uuid=%s "
+      "temperature=%.2f,"
+      "humidity=%.2f",
+      peep_uuid,
+      hatch_uuid,
+      temperature,
+      humidity);
+  }
+
+  return out;
 }
 
-void
-subscribe_callback(AWS_IoT_Client * p_client, char *topic_name,
+static void
+_subscribe_callback(AWS_IoT_Client * p_client, char *topic_name,
   uint16_t topic_name_len, IoT_Publish_Message_Params * params, void * p_data)
 {
   (void) topic_name_len;
   (void) p_client;
   (void) p_data;
+  char * db_str = NULL;
 
-  pthread_mutex_lock(&_lock);
-
-  // NOTE: Assumes payload is properly formatted JSON message
-  // TODO: Check to ensure it is valid JSON?
-  printf("Subscribe callback\n");
-  printf("%.*s\n", (int) params->payloadLen, (char *) params->payload);
-
-  _parse_json_and_format((char *) params->payload);
-
-  pthread_mutex_unlock(&_lock);
+  db_str = _parse_json_and_format((char *) params->payload);
+  if (db_str) {
+    _https_post_to_db(db_str);
+    free(db_str);
+  }
 }
 
 void
@@ -102,15 +184,16 @@ disconnect_callback(AWS_IoT_Client * p_client, void *data)
   }
 
   if(aws_iot_is_autoreconnect_enabled(p_client)) {
-    printf("Auto Reconnect is enabled, Reconnecting attempt will start now\n");
+    printf("Auto Reconnect is enabled, reconnecting attempt will start now\n");
   }
   else {
-    printf("Auto Reconnect not enabled. Starting manual reconnect...\n");
+    printf("Auto Reconnect not enabled, starting manual reconnect...\n");
     rc = aws_iot_mqtt_attempt_reconnect(p_client);
     if(NETWORK_RECONNECTED == rc) {
-      printf("Manual Reconnect Successful\n");
-    } else {
-      printf("Manual Reconnect Failed - %d\n", rc);
+      printf("manual reconnect successful\n");
+    }
+    else {
+      fprintf(stderr, "manual reconnect failed (%d)\n", rc);
     }
   }
 }
@@ -139,7 +222,7 @@ _aws_connect(char * root_ca_file, char * client_cert_file,
 
     rc = aws_iot_mqtt_init(&client, &mqtt_param);
     if(SUCCESS != rc) {
-      printf("Error(%d): aws_iot_mqtt_init failed\n", rc);
+      fprintf(stderr, "aws_iot_mqtt_init failed (%d)\n", rc);
       r = false;
     }
   }
@@ -152,14 +235,17 @@ _aws_connect(char * root_ca_file, char * client_cert_file,
     connect_param.clientIDLen = (uint16_t) strlen(AWS_IOT_MQTT_CLIENT_ID);
     connect_param.isWillMsgPresent = false;
 
-    printf("Connecting...\n");
+    printf("connecting...\n");
     rc = aws_iot_mqtt_connect(&client, &connect_param);
     if(SUCCESS != rc) {
-      printf("Error(%d): connecting to %s:%d\n",
-        rc,
+      fprintf(stderr, "failed to connect to %s:%d (%d)\n",
         mqtt_param.pHostURL,
-        mqtt_param.port);
+        mqtt_param.port,
+        rc);
       r = false;
+    }
+    else {
+      printf("connected to %s:%d\n", mqtt_param.pHostURL, mqtt_param.port);
     }
   }
 
@@ -172,7 +258,7 @@ _aws_connect(char * root_ca_file, char * client_cert_file,
      */
     rc = aws_iot_mqtt_autoreconnect_set_status(&client, true);
     if(SUCCESS != rc) {
-      IOT_ERROR("Error(%d): Unable to set Auto Reconnect to true", rc);
+      fprintf(stderr, "unable to set Auto Reconnect to true (%d)", rc);
       r = false;
     }
   }
@@ -180,7 +266,7 @@ _aws_connect(char * root_ca_file, char * client_cert_file,
   return r;
 }
 
-bool
+static bool
 _aws_listen(char * topic)
 {
   IoT_Error_t rc = FAILURE;
@@ -192,7 +278,7 @@ _aws_listen(char * topic)
       topic,
       strlen(topic),
       QOS0,
-      subscribe_callback,
+      _subscribe_callback,
       NULL);
   }
 
@@ -201,45 +287,13 @@ _aws_listen(char * topic)
     r = false;
   }
 
-  printf("listening to %s\n", topic);
+  printf("subscribed to MQTT topic %s\n", topic);
 
   while ((r) && (_is_running)) {
     aws_iot_mqtt_yield(&client, 5000);
   }
 
   return r;
-}
-
-bool
-_https_post(char * msg)
-{
-  CURL *curl;
-  CURLcode res;
- 
-  curl_global_init(CURL_GLOBAL_DEFAULT);
- 
-  curl = curl_easy_init();
-  if(curl) {
-    curl_easy_setopt(curl, CURLOPT_URL, "https://db.hatchtrack.com:8086/write?db=peep0");
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-    curl_easy_setopt(curl, CURLOPT_USERPWD, "writer:YGAPARxJ0DOPm2mC");
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "peep,peep_uuid=hello!!!-d78a-471f-81d4-world!!!!!!!,hatch_uuid=9b2a2609-4865-4415-bf3e-ebe885646822 temperature=40.4,humidity=55");
-    /* Perform the request, res will get the return code */ 
-    res = curl_easy_perform(curl);
-    /* Check for errors */ 
-    if(res != CURLE_OK)
-      fprintf(stderr, "curl_easy_perform() failed: %s\n",
-              curl_easy_strerror(res));
- 
-    /* always cleanup */ 
-    curl_easy_cleanup(curl);
-  }
- 
-  curl_global_cleanup();
- 
-  return 0;
 }
 
 /***** Global Functions *****/
@@ -256,15 +310,18 @@ main(int argc, char **argv)
 
   // catch ctrl+c
   signal(SIGINT, sigint_callback);
+  curl_global_init(CURL_GLOBAL_DEFAULT);
 
   if (r) {
-    printf("%s\n%s\n%s\n", argv[1], argv[2], argv[3]);
+    printf("loading certificates...\n%s\n%s\n%s\n", argv[1], argv[2], argv[3]);
     r = _aws_connect(argv[1], argv[2], argv[3]);
   }
 
   if (r) {
     r = _aws_listen(AWS_TOPIC_NAME);
   }
+
+  curl_global_cleanup();
 
   return (r) ? 0 : 1;
 }
