@@ -46,4 +46,3 @@ lib/curl-7.64.0/tests/server/.deps/
 lib/curl-7.64.0/tests/server/Makefile
 lib/curl-7.64.0/tests/unit/.deps/
 lib/curl-7.64.0/tests/unit/Makefile
-scripts/configure-curl.sh
