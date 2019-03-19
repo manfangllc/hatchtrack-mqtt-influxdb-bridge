@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
@@ -91,6 +92,7 @@ _parse_json_and_format(char * js)
   char * hatch_uuid = NULL;
   float temperature = 0.0;
   float humidity = 0.0;
+  uint64_t unix_time = 0;
   bool r = true;
 
   cjson = cJSON_Parse(js);
@@ -140,6 +142,18 @@ _parse_json_and_format(char * js)
   }
 
   if (r) {
+    node = cJSON_GetObjectItemCaseSensitive(cjson, "unixTime");
+    if (cJSON_IsNumber(node)) {
+      unix_time = (uint32_t) node->valuedouble;
+      // convert unix time in seconds to nano seconds for InfluxDB.
+      unix_time *= 1000000000;
+    }
+    else {
+      r = false;
+    }
+  }
+
+  if (r) {
     out = malloc(INFLUXDB_DATA_STR_MAX_LEN);
     sprintf(
       out,
@@ -147,11 +161,13 @@ _parse_json_and_format(char * js)
       "peep_uuid=%s,"
       "hatch_uuid=%s "
       "temperature=%.2f,"
-      "humidity=%.2f",
+      "humidity=%.2f "
+      "%" PRIu64 "",
       peep_uuid,
       hatch_uuid,
       temperature,
-      humidity);
+      humidity,
+      unix_time);
   }
 
   return out;
