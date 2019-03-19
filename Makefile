@@ -67,8 +67,14 @@ AWS_COMMON_INC_CP := $(addprefix $(BUILD_AWS_SDK_INC_DIR)/, $(notdir $(AWS_COMMO
 
 all: mbedtls curl cjson aws-sdk app
 
+install:
+	$(SHELL) -c '$(DIR)/scripts/install.sh'
+
+uninstall:
+	$(SHELL) -c '$(DIR)/scripts/uninstall.sh'
+
 app: app-bin-dir $(APP_OBJ) $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN)
-	@echo "built $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN)" 
+	@echo "built $(BUILD_APP_BIN_DIR)/$(BUILD_APP_BIN)"
 
 app-bin-dir:
 	@mkdir -v -p $(BUILD_APP_BIN_DIR)

@@ -1,0 +1,16 @@
+[Unit]
+Description=Hatchtrack MQTT InfluxDB bridge
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/hatchtrack-mqtt-influxdb-bridge \
+/usr/local/share/hatchtrack-mqtt-influxdb-bridge-certificates/AmazonRootCA1.pem \
+/usr/local/share/hatchtrack-mqtt-influxdb-bridge-certificates/7c4e04ba46-certificate.pem.crt \
+/usr/local/share/hatchtrack-mqtt-influxdb-bridge-certificates/7c4e04ba46-private.pem.key
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
